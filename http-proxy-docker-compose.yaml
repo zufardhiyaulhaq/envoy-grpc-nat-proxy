@@ -1,0 +1,90 @@
+version: "2"
+services:
+  echo-grpc-client:
+    ports:
+      - "8080:8080"
+    expose:
+      - "8080"
+      - "5000"
+    networks:
+      envoy-tcp-proxy:
+        ipv4_address: 172.18.0.2
+    restart: always
+    environment:
+      ECHO_PORT: 5000
+      HTTP_PORT: 8080
+      GRPC_CLIENT_KEEPALIVE: "false"
+      GRPC_CLIENT_KEEPALIVE_TIME: 10s
+      GRPC_CLIENT_KEEPALIVE_TIMEOUT: 20s
+      GRPC_SERVER_HOST: 172.18.0.3
+      GRPC_SERVER_PORT: 8081
+      GRPC_SERVER_TLS: "false"
+    image: zufardhiyaulhaq/echo-grpc-client:latest
+  echo-grpc-client-tcpdump:
+    network_mode: service:echo-grpc-client
+    restart: always
+    image: nicolaka/netshoot
+    volumes:
+      - ./network_dump:/tmp/network_dump/
+    command: tcpdump -i eth0 port 80 or port 8081 -w /tmp/network_dump/http-proxy-echo-grpc-client.pcapng
+  envoy:
+    build: .
+    expose:
+      - "8081"
+    networks:
+      envoy-tcp-proxy:
+        ipv4_address: 172.18.0.3
+    restart: always
+    volumes:
+      - ./http-proxy-envoy.yaml:/etc/config.yaml
+  envoy-tcpdump:
+    network_mode: service:envoy
+    restart: always
+    image: nicolaka/netshoot
+    volumes:
+      - ./network_dump:/tmp/network_dump/
+    command: tcpdump -i eth0 port 8081 -w /tmp/network_dump/http-proxy-envoy.pcapng
+  aws:
+    build: .
+    expose:
+      - "8081"
+    networks:
+      envoy-tcp-proxy:
+        ipv4_address: 172.18.0.4
+    restart: always
+    volumes:
+      - ./aws.yaml:/etc/config.yaml
+  aws-tcpdump:
+    network_mode: service:aws
+    restart: always
+    image: nicolaka/netshoot
+    volumes:
+      - ./network_dump:/tmp/network_dump/
+    command: tcpdump -i eth0 port 8081 -w /tmp/network_dump/http-proxy-aws.pcapng
+  echo-grpc-server:
+    expose:
+      - "8081"
+    networks:
+      envoy-tcp-proxy:
+        ipv4_address: 172.18.0.5
+    restart: always
+    environment:
+      GRPC_SERVER_PORT: 8081
+      GRPC_SERVER_KEEPALIVE: "false"
+      GRPC_SERVER_KEEPALIVE_TIME: 2h
+      GRPC_SERVER_KEEPALIVE_TIMEOUT: 20s
+    image: zufardhiyaulhaq/echo-grpc-server:latest
+  echo-grpc-server-tcpdump:
+    network_mode: service:echo-grpc-server
+    restart: always
+    image: nicolaka/netshoot
+    volumes:
+      - ./network_dump:/tmp/network_dump/
+    command: tcpdump -i eth0 port 8081 -w /tmp/network_dump/http-proxy-echo-grpc-server.pcapng
+networks:
+  envoy-tcp-proxy:
+    driver: bridge
+    ipam:
+     config:
+       - subnet: 172.18.0.0/16
+         gateway: 172.18.0.1
